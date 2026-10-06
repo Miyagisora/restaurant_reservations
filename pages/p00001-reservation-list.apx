@@ -1,0 +1,316 @@
+page 1 (
+    name: Reservation List
+    alias: RESERVATION-LIST
+    title: 予約一覧
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    help {
+        helpText: 人数、来店日時、ステータスで予約を絞り込めます。結果一覧ではInteractive Reportのソート、フィルター、列操作も利用できます。
+    }
+
+    region RESERVATION_FILTERS (
+        name: 予約の絞り込み
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: BODY
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    pageItem P1_PARTY_SIZE (
+        type: selectList
+        label {
+            label: 人数
+        }
+        layout {
+            sequence: 10
+            region: @RESERVATION_FILTERS
+            slot: regionBody
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT DISTINCT TO_CHAR(r.party_size), r.party_size
+                  FROM restaurant_reservations r
+                 ORDER BY r.party_size
+                ```
+            displayNullValue: true
+        }
+        help {
+            helpText: 表示する予約人数を選択します。未選択の場合はすべて表示します。
+        }
+    )
+
+    pageItem P1_DATE_FROM (
+        type: datePicker
+        label {
+            label: 来店日時（開始）
+        }
+        layout {
+            sequence: 20
+            region: @RESERVATION_FILTERS
+            slot: regionBody
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            formatMask: YYYY-MM-DD HH24:MI
+        }
+        help {
+            helpText: この日時以降に来店予定の予約を表示します。未入力の場合は開始日時を指定しません。
+        }
+    )
+
+    pageItem P1_DATE_TO (
+        type: datePicker
+        label {
+            label: 来店日時（終了）
+        }
+        layout {
+            sequence: 30
+            region: @RESERVATION_FILTERS
+            slot: regionBody
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            formatMask: YYYY-MM-DD HH24:MI
+        }
+        help {
+            helpText: この日時以前に来店予定の予約を表示します。未入力の場合は終了日時を指定しません。
+        }
+    )
+
+    pageItem P1_STATUS (
+        type: selectList
+        label {
+            label: ステータス
+        }
+        layout {
+            sequence: 40
+            region: @RESERVATION_FILTERS
+            slot: regionBody
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+        lov {
+            type: staticValues
+            staticValues: STATIC:確認済み;CONFIRMED,来店済み;SEATED,キャンセル;CANCELLED
+            displayNullValue: true
+        }
+        help {
+            helpText: 表示する予約ステータスを選択します。未選択の場合はすべて表示します。
+        }
+    )
+
+    button FILTER_RESERVATIONS (
+        buttonName: FILTER_RESERVATIONS
+        label: 絞り込む
+        layout {
+            sequence: 50
+            region: @RESERVATION_FILTERS
+            slot: regionBody
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+            hot: true
+        }
+        behavior {
+            action: submitPage
+            requiresConfirmation: false
+        }
+    )
+
+    region RESERVATIONS (
+        name: 予約一覧
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT r.reservation_id AS RESERVATION_ID
+                     , r.guest_name AS GUEST_NAME
+                     , r.phone_number AS PHONE_NUMBER
+                     , r.email AS EMAIL
+                     , r.reservation_at AS RESERVATION_AT
+                     , r.party_size AS PARTY_SIZE
+                     , r.status AS STATUS
+                     , r.special_requests AS SPECIAL_REQUESTS
+                  FROM restaurant_reservations r
+                 WHERE (:P1_PARTY_SIZE IS NULL OR r.party_size = TO_NUMBER(:P1_PARTY_SIZE))
+                   AND (:P1_DATE_FROM IS NULL OR r.reservation_at >= TO_TIMESTAMP(:P1_DATE_FROM, 'YYYY-MM-DD HH24:MI'))
+                   AND (:P1_DATE_TO IS NULL OR r.reservation_at <= TO_TIMESTAMP(:P1_DATE_TO, 'YYYY-MM-DD HH24:MI'))
+                   AND (:P1_STATUS IS NULL OR r.status = :P1_STATUS)
+                 ORDER BY r.reservation_at, r.reservation_id
+                ```
+            pageItemsToSubmit: [
+                P1_PARTY_SIZE
+                P1_DATE_FROM
+                P1_DATE_TO
+                P1_STATUS
+            ]
+        }
+        layout {
+            sequence: 20
+            slot: BODY
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: reservations
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: 条件に一致する予約はありません。
+        }
+
+        column RESERVATION_ID (
+            type: hidden
+            heading {
+                heading: 予約ID
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column GUEST_NAME (
+            type: plainText
+            heading {
+                heading: 予約名
+            }
+            layout {
+                sequence: 20
+            }
+            source {
+                dataType: STRING
+            }
+            comments {
+                comments: Display Label: 予約名; Display in Report: Yes; Display in Form: Yes; Format Mask: None; Value Required: Yes; Read Only: Yes; Primary Display Column: Yes; Authorization Scheme: None. 予約者の氏名です。
+            }
+        )
+
+        column PHONE_NUMBER (
+            type: plainText
+            heading {
+                heading: 電話番号
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+            comments {
+                comments: Display Label: 電話番号; Display in Report: Yes; Display in Form: Yes; Format Mask: None; Value Required: Yes; Read Only: Yes; Primary Display Column: No; Authorization Scheme: None. 予約者の連絡先電話番号です。
+            }
+        )
+
+        column EMAIL (
+            type: plainText
+            heading {
+                heading: メールアドレス
+            }
+            layout {
+                sequence: 40
+            }
+            source {
+                dataType: STRING
+            }
+            comments {
+                comments: Display Label: メールアドレス; Display in Report: Yes; Display in Form: Yes; Format Mask: None; Value Required: No; Read Only: Yes; Primary Display Column: No; Authorization Scheme: None. 任意登録された予約者のメールアドレスです。
+            }
+        )
+
+        column RESERVATION_AT (
+            type: plainText
+            heading {
+                heading: 来店日時
+            }
+            layout {
+                sequence: 50
+            }
+            appearance {
+                formatMask: YYYY/MM/DD HH24:MI
+            }
+            source {
+                dataType: DATE
+            }
+            comments {
+                comments: Display Label: 来店日時; Display in Report: Yes; Display in Form: Yes; Format Mask: YYYY/MM/DD HH24:MI; Value Required: Yes; Read Only: Yes; Primary Display Column: No; Authorization Scheme: None. 予約者の来店予定日時です。
+            }
+        )
+
+        column PARTY_SIZE (
+            type: plainText
+            heading {
+                heading: 人数
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+            comments {
+                comments: Display Label: 人数; Display in Report: Yes; Display in Form: Yes; Format Mask: None; Value Required: Yes; Read Only: Yes; Primary Display Column: No; Authorization Scheme: None. 予約の利用人数です。
+            }
+        )
+
+        column STATUS (
+            type: plainText
+            heading {
+                heading: ステータス
+            }
+            layout {
+                sequence: 70
+            }
+            source {
+                dataType: STRING
+            }
+            comments {
+                comments: Display Label: ステータス; Display in Report: Yes; Display in Form: Yes; Format Mask: None; Value Required: Yes; Read Only: Yes; Primary Display Column: No; Authorization Scheme: None. 予約ステータスはCONFIRMED、SEATED、CANCELLEDです。
+            }
+        )
+
+        column SPECIAL_REQUESTS (
+            type: plainText
+            heading {
+                heading: メモ
+            }
+            layout {
+                sequence: 80
+            }
+            source {
+                dataType: STRING
+            }
+            comments {
+                comments: Display Label: メモ; Display in Report: Yes; Display in Form: Yes; Format Mask: None; Value Required: No; Read Only: Yes; Primary Display Column: No; Authorization Scheme: None. 予約時の要望や連絡事項です。
+            }
+        )
+    )
+)
