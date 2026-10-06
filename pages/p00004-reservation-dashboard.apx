@@ -7,8 +7,125 @@ page 4 (
         templateOptions: #DEFAULT#
     }
     help {
-        helpText: 本日の予約状況と、ステータス別の全予約件数を確認できます。
+        helpText: 対象日を指定して、その日の予約状況とステータス別件数を確認できます。
     }
+
+    region DASHBOARD_FILTERS (
+        name: 表示条件
+        type: staticContent
+        layout {
+            sequence: 5
+            slot: BODY
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    pageItem P4_TARGET_DATE (
+        type: datePicker
+        label {
+            label: 対象日
+        }
+        layout {
+            sequence: 10
+            region: @DASHBOARD_FILTERS
+            slot: regionBody
+            columnSpan: 4
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            formatMask: YYYY/MM/DD
+        }
+        validation {
+            valueRequired: true
+        }
+        help {
+            helpText: 予約状況を表示する日付を選択してください。
+        }
+    )
+
+    computation COMP_INIT_TARGET_DATE (
+        itemName: P4_TARGET_DATE
+        computation {
+            type: expression
+            language: plsql
+            plsqlExpression: TO_CHAR(TRUNC(CURRENT_DATE), 'YYYY/MM/DD')
+        }
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+    )
+
+    button FILTER_DASHBOARD (
+        buttonName: FILTER_DASHBOARD
+        label: 検索
+        layout {
+            sequence: 20
+            region: @DASHBOARD_FILTERS
+            slot: rightOfTitle
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+            hot: true
+        }
+        behavior {
+            action: definedByDynamicAction
+            requiresConfirmation: false
+        }
+    )
+
+    dynamicAction DA_REFRESH_DASHBOARD (
+        name: Refresh dashboard for selected date
+        execution {
+            sequence: 10
+        }
+        when {
+            event: click
+            selectionType: button
+            button: @FILTER_DASHBOARD
+        }
+
+        action REFRESH_KPIS (
+            action: refresh
+            affectedElements {
+                selectionType: region
+                region: @DASHBOARD_KPIS
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+        action REFRESH_STATUS_CHART (
+            action: refresh
+            affectedElements {
+                selectionType: region
+                region: @STATUS_CHART
+            }
+            execution {
+                sequence: 20
+                fireOnInit: false
+            }
+        )
+
+        action REFRESH_TODAY_RESERVATIONS (
+            action: refresh
+            affectedElements {
+                selectionType: region
+                region: @TODAY_RESERVATIONS
+            }
+            execution {
+                sequence: 30
+                fireOnInit: false
+            }
+        )
+    )
 
     region DASHBOARD_KPIS (
         name: 予約状況
@@ -19,52 +136,59 @@ page 4 (
             sqlQuery:
                 ```sql
                 WITH day_bounds AS (
-                    SELECT CAST(TRUNC(CURRENT_DATE) AS TIMESTAMP) AS day_start,
-                           CAST(TRUNC(CURRENT_DATE) + 1 AS TIMESTAMP) AS next_day
+                    SELECT CAST(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')) AS TIMESTAMP) AS day_start,
+                           CAST(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')) + 1 AS TIMESTAMP) AS next_day
                       FROM dual
                 ),
-                today_summary AS (
-                    SELECT COUNT(r.reservation_id) AS reservation_count,
-                           NVL(SUM(r.party_size), 0) AS party_size_total
+                selected_day AS (
+                    SELECT r.reservation_id, r.party_size, r.status
                       FROM restaurant_reservations r
                       CROSS JOIN day_bounds d
                      WHERE r.reservation_at >= d.day_start
                        AND r.reservation_at < d.next_day
                 ),
+                selected_day_summary AS (
+                    SELECT COUNT(r.reservation_id) AS reservation_count,
+                           NVL(SUM(r.party_size), 0) AS party_size_total
+                      FROM selected_day r
+                ),
                 status_options AS (
-                    SELECT 3 AS id, '確認済み予約' AS title, 'CONFIRMED' AS status FROM dual
+                    SELECT 3 AS id, '指定日の確認済み予約' AS title, 'CONFIRMED' AS status FROM dual
                     UNION ALL
-                    SELECT 4, '来店済み予約', 'SEATED' FROM dual
+                    SELECT 4, '指定日の来店済み予約', 'SEATED' FROM dual
                     UNION ALL
-                    SELECT 5, 'キャンセル予約', 'CANCELLED' FROM dual
+                    SELECT 5, '指定日のキャンセル予約', 'CANCELLED' FROM dual
                 ),
                 status_summary AS (
                     SELECT s.id,
                            s.title,
                            COUNT(r.reservation_id) AS reservation_count
                       FROM status_options s
-                      LEFT JOIN restaurant_reservations r
+                      LEFT JOIN selected_day r
                         ON r.status = s.status
                      GROUP BY s.id, s.title
                 )
                 SELECT 1 AS ID,
-                       '本日の予約件数' AS TITLE,
+                       '指定日の予約件数' AS TITLE,
                        t.reservation_count AS METRIC,
-                       '今日' AS META
-                  FROM today_summary t
+                       TO_CHAR(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')), 'YYYY/MM/DD') AS META
+                  FROM selected_day_summary t
                 UNION ALL
                 SELECT 2 AS ID,
-                       '本日の予約人数' AS TITLE,
+                       '指定日の予約人数' AS TITLE,
                        t.party_size_total AS METRIC,
-                       '今日' AS META
-                  FROM today_summary t
+                       TO_CHAR(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')), 'YYYY/MM/DD') AS META
+                  FROM selected_day_summary t
                 UNION ALL
                 SELECT s.id AS ID,
                        s.title AS TITLE,
                        s.reservation_count AS METRIC,
-                       '全予約' AS META
+                       TO_CHAR(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')), 'YYYY/MM/DD') AS META
                   FROM status_summary s
                 ```
+            pageItemsToSubmit: [
+                P4_TARGET_DATE
+            ]
         }
         layout {
             sequence: 10
@@ -165,7 +289,12 @@ page 4 (
                 type: sqlQuery
                 sqlQuery:
                     ```sql
-                    WITH status_options AS (
+                    WITH day_bounds AS (
+                        SELECT CAST(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')) AS TIMESTAMP) AS day_start,
+                               CAST(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')) + 1 AS TIMESTAMP) AS next_day
+                          FROM dual
+                    ),
+                    status_options AS (
                         SELECT 1 AS display_order, 'CONFIRMED' AS status, '確認済み' AS status_label FROM dual
                         UNION ALL
                         SELECT 2, 'SEATED', '来店済み' FROM dual
@@ -177,9 +306,14 @@ page 4 (
                       FROM status_options s
                       LEFT JOIN restaurant_reservations r
                         ON r.status = s.status
+                       AND r.reservation_at >= (SELECT day_start FROM day_bounds)
+                       AND r.reservation_at < (SELECT next_day FROM day_bounds)
                      GROUP BY s.display_order, s.status, s.status_label
                      ORDER BY s.display_order
                     ```
+                pageItemsToSubmit: [
+                    P4_TARGET_DATE
+                ]
             }
             columnMapping {
                 label: LABEL
@@ -192,7 +326,7 @@ page 4 (
     )
 
     region TODAY_RESERVATIONS (
-        name: 今日の予約一覧
+        name: 指定日の予約一覧
         type: interactiveReport
         source {
             location: localDatabase
@@ -211,10 +345,13 @@ page 4 (
                        END AS STATUS,
                        r.phone_number AS PHONE_NUMBER
                   FROM restaurant_reservations r
-                 WHERE r.reservation_at >= CAST(TRUNC(CURRENT_DATE) AS TIMESTAMP)
-                   AND r.reservation_at < CAST(TRUNC(CURRENT_DATE) + 1 AS TIMESTAMP)
+                 WHERE r.reservation_at >= CAST(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')) AS TIMESTAMP)
+                   AND r.reservation_at < CAST(TRUNC(TO_DATE(:P4_TARGET_DATE, 'YYYY/MM/DD')) + 1 AS TIMESTAMP)
                  ORDER BY r.reservation_at, r.reservation_id
                 ```
+            pageItemsToSubmit: [
+                P4_TARGET_DATE
+            ]
         }
         layout {
             sequence: 30
@@ -225,7 +362,7 @@ page 4 (
             templateOptions: #DEFAULT#
         }
         advanced {
-            htmlDomId: today-reservations
+            htmlDomId: selected-day-reservations
         }
         link {
             linkColumn: customTarget
@@ -242,7 +379,7 @@ page 4 (
             type: rowRangesXToY
         }
         messages {
-            whenNoDataFound: 本日の予約はありません。
+            whenNoDataFound: 指定日の予約はありません。
         }
 
         column RESERVATION_ID (
