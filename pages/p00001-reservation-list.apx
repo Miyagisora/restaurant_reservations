@@ -142,6 +142,27 @@ page 1 (
         }
     )
 
+    button NEW_RESERVATION (
+        buttonName: NEW_RESERVATION
+        label: 新規予約
+        layout {
+            sequence: 60
+            region: @RESERVATION_FILTERS
+            slot: rightOfTitle
+        }
+        appearance {
+            buttonTemplate: @/text
+            templateOptions: #DEFAULT#
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 2
+            }
+            requiresConfirmation: false
+        }
+    )
+
     region RESERVATIONS (
         name: 予約一覧
         type: interactiveReport
