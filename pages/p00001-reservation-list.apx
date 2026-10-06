@@ -32,6 +32,7 @@ page 1 (
             sequence: 10
             region: @RESERVATION_FILTERS
             slot: regionBody
+            columnSpan: 3
         }
         appearance {
             template: @/optional-floating
@@ -61,6 +62,8 @@ page 1 (
             sequence: 20
             region: @RESERVATION_FILTERS
             slot: regionBody
+            startNewRow: false
+            columnSpan: 3
         }
         appearance {
             template: @/optional-floating
@@ -81,6 +84,8 @@ page 1 (
             sequence: 30
             region: @RESERVATION_FILTERS
             slot: regionBody
+            startNewRow: false
+            columnSpan: 3
         }
         appearance {
             template: @/optional-floating
@@ -101,6 +106,8 @@ page 1 (
             sequence: 40
             region: @RESERVATION_FILTERS
             slot: regionBody
+            startNewRow: false
+            columnSpan: 3
         }
         appearance {
             template: @/optional-floating
@@ -122,7 +129,7 @@ page 1 (
         layout {
             sequence: 50
             region: @RESERVATION_FILTERS
-            slot: regionBody
+            slot: rightOfTitle
         }
         appearance {
             buttonTemplate: @/text
@@ -143,18 +150,32 @@ page 1 (
             type: sqlQuery
             sqlQuery:
                 ```sql
+                WITH date_filter AS (
+                    SELECT TO_TIMESTAMP(TRIM(:P1_DATE_FROM), 'YYYY-MM-DD HH24:MI') AS date_from
+                         , TO_TIMESTAMP(TRIM(:P1_DATE_TO), 'YYYY-MM-DD HH24:MI') AS date_to
+                      FROM dual
+                )
                 SELECT r.reservation_id AS RESERVATION_ID
                      , r.guest_name AS GUEST_NAME
                      , r.phone_number AS PHONE_NUMBER
                      , r.email AS EMAIL
                      , r.reservation_at AS RESERVATION_AT
                      , r.party_size AS PARTY_SIZE
-                     , r.status AS STATUS
+                     , CASE r.status
+                           WHEN 'CONFIRMED' THEN '確認済み'
+                           WHEN 'SEATED' THEN '来店済み'
+                           WHEN 'CANCELLED' THEN 'キャンセル'
+                           ELSE r.status
+                       END AS STATUS
                      , r.special_requests AS SPECIAL_REQUESTS
                   FROM restaurant_reservations r
+                  CROSS JOIN date_filter d
                  WHERE (:P1_PARTY_SIZE IS NULL OR r.party_size = TO_NUMBER(:P1_PARTY_SIZE))
-                   AND (:P1_DATE_FROM IS NULL OR r.reservation_at >= TO_TIMESTAMP(:P1_DATE_FROM, 'YYYY-MM-DD HH24:MI'))
-                   AND (:P1_DATE_TO IS NULL OR r.reservation_at <= TO_TIMESTAMP(:P1_DATE_TO, 'YYYY-MM-DD HH24:MI'))
+                   AND (
+                           (d.date_from IS NULL AND d.date_to IS NULL)
+                        OR ((d.date_from IS NULL OR r.reservation_at >= d.date_from)
+                        AND (d.date_to IS NULL OR r.reservation_at <= d.date_to))
+                   )
                    AND (:P1_STATUS IS NULL OR r.status = :P1_STATUS)
                  ORDER BY r.reservation_at, r.reservation_id
                 ```
