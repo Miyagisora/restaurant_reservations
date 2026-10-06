@@ -92,4 +92,19 @@ list navigation-menu (
         }
     )
 
+    entry reservation-dashboard (
+        label: 予約ダッシュボード
+        icon {
+            imageIconCssClasses: fa-chart-pie
+        }
+        layout {
+            sequence: 30
+        }
+        link {
+            target: {
+                page: 4
+            }
+        }
+    )
+
 )

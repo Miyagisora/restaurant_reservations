@@ -218,6 +218,17 @@ page 1 (
         advanced {
             htmlDomId: reservations
         }
+        link {
+            linkColumn: customTarget
+            target: {
+                page: 3
+                items: {
+                    P3_RESERVATION_ID: #RESERVATION_ID#
+                }
+                clearCache: 3
+            }
+            linkIcon: 詳細・編集
+        }
         pagination {
             type: rowRangesXToY
         }

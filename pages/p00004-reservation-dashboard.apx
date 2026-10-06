@@ -1,0 +1,331 @@
+page 4 (
+    name: Reservation Dashboard
+    alias: RESERVATION-DASHBOARD
+    title: 予約ダッシュボード
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    help {
+        helpText: 本日の予約状況と、ステータス別の全予約件数を確認できます。
+    }
+
+    region DASHBOARD_KPIS (
+        name: 予約状況
+        type: themeTemplateComponent/metricCard
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                WITH day_bounds AS (
+                    SELECT CAST(TRUNC(CURRENT_DATE) AS TIMESTAMP) AS day_start,
+                           CAST(TRUNC(CURRENT_DATE) + 1 AS TIMESTAMP) AS next_day
+                      FROM dual
+                ),
+                today_summary AS (
+                    SELECT COUNT(r.reservation_id) AS reservation_count,
+                           NVL(SUM(r.party_size), 0) AS party_size_total
+                      FROM restaurant_reservations r
+                      CROSS JOIN day_bounds d
+                     WHERE r.reservation_at >= d.day_start
+                       AND r.reservation_at < d.next_day
+                ),
+                status_options AS (
+                    SELECT 3 AS id, '確認済み予約' AS title, 'CONFIRMED' AS status FROM dual
+                    UNION ALL
+                    SELECT 4, '来店済み予約', 'SEATED' FROM dual
+                    UNION ALL
+                    SELECT 5, 'キャンセル予約', 'CANCELLED' FROM dual
+                ),
+                status_summary AS (
+                    SELECT s.id,
+                           s.title,
+                           COUNT(r.reservation_id) AS reservation_count
+                      FROM status_options s
+                      LEFT JOIN restaurant_reservations r
+                        ON r.status = s.status
+                     GROUP BY s.id, s.title
+                )
+                SELECT 1 AS ID,
+                       '本日の予約件数' AS TITLE,
+                       t.reservation_count AS METRIC,
+                       '今日' AS META
+                  FROM today_summary t
+                UNION ALL
+                SELECT 2 AS ID,
+                       '本日の予約人数' AS TITLE,
+                       t.party_size_total AS METRIC,
+                       '今日' AS META
+                  FROM today_summary t
+                UNION ALL
+                SELECT s.id AS ID,
+                       s.title AS TITLE,
+                       s.reservation_count AS METRIC,
+                       '全予約' AS META
+                  FROM status_summary s
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: BODY
+        }
+        appearance {
+            template: @/blank-with-attributes
+            templateOptions: #DEFAULT#
+        }
+        componentAppearance {
+            display: report
+        }
+        settings {
+            title: &TITLE.
+            metric: &METRIC.
+            meta: &META.
+            layout: 5Columns
+        }
+
+        column ID (
+            layout {
+                sequence: 10
+            }
+            source {
+                databaseColumn: ID
+                dataType: number
+                primaryKey: true
+            }
+        )
+
+        column TITLE (
+            layout {
+                sequence: 20
+            }
+            appearance {
+                group: false
+            }
+            source {
+                databaseColumn: TITLE
+                dataType: varchar2
+            }
+        )
+
+        column METRIC (
+            layout {
+                sequence: 30
+            }
+            appearance {
+                group: false
+            }
+            source {
+                databaseColumn: METRIC
+                dataType: number
+            }
+        )
+
+        column META (
+            layout {
+                sequence: 40
+            }
+            appearance {
+                group: false
+            }
+            source {
+                databaseColumn: META
+                dataType: varchar2
+            }
+        )
+    )
+
+    region STATUS_CHART (
+        name: ステータス別予約件数
+        type: chart
+        layout {
+            sequence: 20
+            slot: BODY
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+        chart {
+            type: pie
+        }
+        title {
+            title: ステータス別予約件数
+        }
+        legend {
+            show: true
+        }
+
+        series STATUS_SERIES (
+            name: 予約件数
+            execution {
+                sequence: 10
+            }
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    WITH status_options AS (
+                        SELECT 1 AS display_order, 'CONFIRMED' AS status, '確認済み' AS status_label FROM dual
+                        UNION ALL
+                        SELECT 2, 'SEATED', '来店済み' FROM dual
+                        UNION ALL
+                        SELECT 3, 'CANCELLED', 'キャンセル' FROM dual
+                    )
+                    SELECT s.status_label AS LABEL,
+                           COUNT(r.reservation_id) AS VALUE
+                      FROM status_options s
+                      LEFT JOIN restaurant_reservations r
+                        ON r.status = s.status
+                     GROUP BY s.display_order, s.status, s.status_label
+                     ORDER BY s.display_order
+                    ```
+            }
+            columnMapping {
+                label: LABEL
+                value: VALUE
+            }
+            label {
+                show: true
+            }
+        )
+    )
+
+    region TODAY_RESERVATIONS (
+        name: 今日の予約一覧
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT r.reservation_id AS RESERVATION_ID,
+                       r.reservation_at AS RESERVATION_AT,
+                       r.guest_name AS GUEST_NAME,
+                       r.party_size AS PARTY_SIZE,
+                       CASE r.status
+                           WHEN 'CONFIRMED' THEN '確認済み'
+                           WHEN 'SEATED' THEN '来店済み'
+                           WHEN 'CANCELLED' THEN 'キャンセル'
+                           ELSE r.status
+                       END AS STATUS,
+                       r.phone_number AS PHONE_NUMBER
+                  FROM restaurant_reservations r
+                 WHERE r.reservation_at >= CAST(TRUNC(CURRENT_DATE) AS TIMESTAMP)
+                   AND r.reservation_at < CAST(TRUNC(CURRENT_DATE) + 1 AS TIMESTAMP)
+                 ORDER BY r.reservation_at, r.reservation_id
+                ```
+        }
+        layout {
+            sequence: 30
+            slot: BODY
+        }
+        appearance {
+            template: @/interactive-report
+            templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: today-reservations
+        }
+        link {
+            linkColumn: customTarget
+            target: {
+                page: 3
+                items: {
+                    P3_RESERVATION_ID: #RESERVATION_ID#
+                }
+                clearCache: 3
+            }
+            linkIcon: 詳細・編集
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: 本日の予約はありません。
+        }
+
+        column RESERVATION_ID (
+            type: hidden
+            heading {
+                heading: 予約ID
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column RESERVATION_AT (
+            type: plainText
+            heading {
+                heading: 来店日時
+            }
+            layout {
+                sequence: 20
+            }
+            appearance {
+                formatMask: YYYY/MM/DD HH24:MI
+            }
+            source {
+                dataType: DATE
+            }
+        )
+
+        column GUEST_NAME (
+            type: plainText
+            heading {
+                heading: 予約名
+            }
+            layout {
+                sequence: 30
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column PARTY_SIZE (
+            type: plainText
+            heading {
+                heading: 人数
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+            source {
+                dataType: NUMBER
+            }
+        )
+
+        column STATUS (
+            type: plainText
+            heading {
+                heading: ステータス
+            }
+            layout {
+                sequence: 50
+            }
+            source {
+                dataType: STRING
+            }
+        )
+
+        column PHONE_NUMBER (
+            type: plainText
+            heading {
+                heading: 電話番号
+            }
+            layout {
+                sequence: 60
+            }
+            source {
+                dataType: STRING
+            }
+        )
+    )
+)
