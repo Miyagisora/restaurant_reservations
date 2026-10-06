@@ -97,10 +97,36 @@ page 2 (
             valueRequired: true
             maxLength: 30
         }
+        help {
+            inlineHelpText: ハイフンなしで入力できます（例：09012345678）。ハイフンを入力した場合も登録時に整形します。
+        }
         source {
             formRegion: @RESERVATION_FORM
             column: PHONE_NUMBER
             dataType: varchar2
+        }
+    )
+
+    validation PHONE_NUMBER_FORMAT (
+        name: 電話番号形式
+        execution {
+            sequence: 5
+        }
+        validation {
+            type: expression
+            language: plsql
+            plsqlExpression:
+                ```plsql
+                REGEXP_LIKE(:P2_PHONE_NUMBER, '^[0-9]+(-[0-9]+)*$')
+                AND REGEXP_LIKE(
+                    REGEXP_REPLACE(:P2_PHONE_NUMBER, '-', ''),
+                    '^(0[0-9]{9}|(050|070|080|090)[0-9]{8}|0800[0-9]{7})$'
+                )
+                ```
+        }
+        error {
+            errorMessage: 電話番号はハイフンなし、または数字をハイフンで区切って入力してください。10桁または一般的な11桁の番号を入力してください。
+            associatedItem: @P2_PHONE_NUMBER
         }
     )
 
@@ -156,7 +182,7 @@ page 2 (
     )
 
     pageItem P2_PARTY_SIZE (
-        type: numberField
+        type: selectList
         label {
             label: 人数
         }
@@ -168,10 +194,20 @@ page 2 (
         appearance {
             template: @/required-floating
             templateOptions: #DEFAULT#
-            width: 12
         }
         validation {
             valueRequired: true
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT TO_CHAR(level), level
+                  FROM dual
+                CONNECT BY level <= 10
+                 ORDER BY level
+                ```
+            displayNullValue: true
         }
         source {
             formRegion: @RESERVATION_FORM
@@ -318,6 +354,56 @@ page 2 (
         behavior {
             type: page
             pageNumber: 1
+        }
+    )
+
+    process FORMAT_PHONE_NUMBER (
+        name: 電話番号の整形
+        type: executeCode
+        source {
+            location: localDatabase
+            language: plsql
+            plsqlCode:
+                ```plsql
+                DECLARE
+                    l_digits VARCHAR2(30);
+                BEGIN
+                    l_digits := REGEXP_REPLACE(:P2_PHONE_NUMBER, '-', '');
+
+                    IF SUBSTR(l_digits, 1, 4) = '0800' THEN
+                        :P2_PHONE_NUMBER := SUBSTR(l_digits, 1, 4) || '-' ||
+                                            SUBSTR(l_digits, 5, 3) || '-' ||
+                                            SUBSTR(l_digits, 8, 4);
+                    ELSIF LENGTH(l_digits) = 11 THEN
+                        :P2_PHONE_NUMBER := SUBSTR(l_digits, 1, 3) || '-' ||
+                                            SUBSTR(l_digits, 4, 4) || '-' ||
+                                            SUBSTR(l_digits, 8, 4);
+                    ELSIF SUBSTR(l_digits, 1, 4) = '0120' THEN
+                        :P2_PHONE_NUMBER := SUBSTR(l_digits, 1, 4) || '-' ||
+                                            SUBSTR(l_digits, 5, 3) || '-' ||
+                                            SUBSTR(l_digits, 8, 3);
+                    ELSIF SUBSTR(l_digits, 1, 4) = '0570' THEN
+                        :P2_PHONE_NUMBER := SUBSTR(l_digits, 1, 4) || '-' ||
+                                            SUBSTR(l_digits, 5, 2) || '-' ||
+                                            SUBSTR(l_digits, 7, 4);
+                    ELSIF SUBSTR(l_digits, 1, 2) IN ('03', '06') THEN
+                        :P2_PHONE_NUMBER := SUBSTR(l_digits, 1, 2) || '-' ||
+                                            SUBSTR(l_digits, 3, 4) || '-' ||
+                                            SUBSTR(l_digits, 7, 4);
+                    ELSE
+                        :P2_PHONE_NUMBER := SUBSTR(l_digits, 1, 3) || '-' ||
+                                            SUBSTR(l_digits, 4, 3) || '-' ||
+                                            SUBSTR(l_digits, 7, 4);
+                    END IF;
+                END;
+                ```
+        }
+        execution {
+            sequence: 5
+            point: processing
+        }
+        serverSideCondition {
+            whenButtonPressed: @CREATE_RESERVATION
         }
     )
 )
